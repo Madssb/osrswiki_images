@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "osrswiki-images"
+version = "0.1.0"
+description = "Fetch OSRS Wiki wiki/image URLs for items, spells, construction, quests."
+readme = "README.md"                      # optional but recommended
+requires-python = ">=3.11"
+dependencies = [
+  "requests>=2.31",
+  "pandas>=2.0",                          # required by client.py for CSV lookups
+]
+
+[project.scripts]
+osrswiki-images = "osrswiki_images.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}                # src/ layout
+include-package-data = true               # allow package-data to be included
+
+[tool.setuptools.packages.find]
+where = ["src"]                           # discover packages under src/
+
+[tool.setuptools.package-data]
+osrswiki_images = ["data/*.csv"]          # ship prayers.csv & slayer_rewards.csv
