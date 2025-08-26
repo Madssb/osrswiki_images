@@ -5,45 +5,42 @@ Network I/O
 -----------
 - Uses the OSRS Wiki API (`action=bucket` and `action=opensearch`) via a shared
   `requests.Session` with a fixed User-Agent.
-- Low-level access: `bucket_query(bucket_name, page_name)`.
+- Low-level access: `_bucket_query(bucket_name, page_name)`.
 
 Selection and Filtering
 -----------------------
 - Always selects 'page_name' and one media field.
 - Media field: 'icon' for 'infobox_construction'; 'image' for other buckets.
-- Applies `default_version=true` where supported (items, construction); falls back
-  for items without a default version.
-- Page matching is case-insensitive on the API; apostrophes in input are escaped.
+- Applies `default_version=true` where supported; falls back for items without a
+  default version.
+- Page matching is case-insensitive; apostrophes in input are escaped.
 
 Local Data
 ----------
-- Package data `data/prayers.csv` and `data/slayer_rewards.csv` provide filename
-  mappings for `prayer()` and `slayer_rewards()`.
+- Packaged CSVs (`data/prayers.csv`, `data/slayer_rewards.csv`) provide filename
+  mappings for `_prayer()` and `_slayer_rewards()`.
 
 Return Conventions
 ------------------
-- High-level resolvers return `{'wikiUrl': str, 'imgUrl': str}` or `None`.
-- `bucket_query` returns a `List[Dict[str, str]]` (raw API records) or raises.
+- Public functions return `{'wikiUrl': str, 'imgUrl': str}` or `None`.
+- `_bucket_query` returns a `List[Dict[str, str]]` (raw API records) or raises.
 - Exceptions: `ConnectionError` on HTTP failure; `KeyError` for unknown bucket.
 
 Public API
 ----------
-- bucket_query(bucket_name, page_name): low-level bucket fetch.
-- item(name): item wiki URL and image; prefers default version.
-- spell(name): spell wiki URL and image.
-- construction(name): construction wiki URL and icon; default version.
-- quest(name): quest wiki URL; fixed quest icon.
-- skill(name): skill wiki URL and icon; validates known skills.
-- slayer_rewards(name): wiki URL and image from local CSV.
-- prayer(name): wiki URL and image from local CSV.
-- generalized_search(query): fallback OpenSearch resolver.
-- search_all(input): tries resolvers in order and returns the first match.
+- search(name): resolve a single name via all resolvers in order.
+- search_many(names, *, skip_missing=True): batch resolve multiple names.
+
+Internal Helpers (subject to change)
+------------------------------------
+- _item(name), _spell(name), _construction(name), _quest(name),
+  _skill(name), _prayer(name), _slayer_rewards(name), _generalized_search(query).
 """
 
 from __future__ import annotations
 
 from importlib.resources import files
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 import pandas as pd
 import requests
@@ -52,7 +49,9 @@ BASE = "https://oldschool.runescape.wiki/"
 API = "https://oldschool.runescape.wiki/api.php"
 
 s = requests.Session()
-s.headers.update({"user-agent": "madlor"})
+s.headers.update(
+    {"user-agent": "osrswiki_images/v0.1 (https://github.com/Madssb/osrswiki_images)"}
+)
 TIMEOUT = 10
 
 SKILLS = [
@@ -87,7 +86,7 @@ def _pkg_csv_path(name: str) -> str:
     return str(files("osrswiki_images").joinpath("data", name))
 
 
-def bucket_query(bucket_name: str, page_name: str) -> List[Dict[str, str]]:
+def _bucket_query(bucket_name: str, page_name: str) -> List[Dict[str, str]]:
     """Fetch raw records from the OSRS Wiki bucket API.
 
     Selects 'page_name' and one media field based on the bucket:
@@ -121,7 +120,7 @@ def bucket_query(bucket_name: str, page_name: str) -> List[Dict[str, str]]:
     return resp.json()["bucket"]
 
 
-def sanitize(text: str) -> str:
+def _sanitize(text: str) -> str:
     """Normalize wiki strings for URLs.
 
     Removes wiki/file markup and replaces spaces with underscores.
@@ -137,7 +136,7 @@ def sanitize(text: str) -> str:
     )
 
 
-def item(item_name: str) -> Optional[Dict[str, str]]:
+def _item(item_name: str) -> Dict[str, str] | None:
     """Resolve an item to its wiki page and image.
 
     Tries 'infobox_item' with default_version=true; falls back to 'infobox_item2'
@@ -149,17 +148,17 @@ def item(item_name: str) -> Optional[Dict[str, str]]:
     Returns:
         {'wikiUrl': str, 'imgUrl': str} if found, else None.
     """
-    bucket = bucket_query("infobox_item", item_name)
+    bucket = _bucket_query("infobox_item", item_name)
     if not bucket:
-        bucket = bucket_query("infobox_item2", item_name)  # some items have no default
+        bucket = _bucket_query("infobox_item2", item_name)  # some items have no default
     if not bucket:
         return None
-    page_name = sanitize(bucket[0]["page_name"])
-    image_file = sanitize(bucket[0]["image"][0])
+    page_name = _sanitize(bucket[0]["page_name"])
+    image_file = _sanitize(bucket[0]["image"][0])
     return {"wikiUrl": f"{BASE}w/{page_name}", "imgUrl": f"{BASE}images/{image_file}"}
 
 
-def spell(spell_name: str) -> Optional[Dict[str, str]]:
+def _spell(spell_name: str) -> Dict[str, str] | None:
     """Resolve a spell to its wiki page and image.
 
     Args:
@@ -169,15 +168,15 @@ def spell(spell_name: str) -> Optional[Dict[str, str]]:
         {'wikiUrl': str, 'imgUrl': str} if found, else None.
     """
     spell_name = spell_name.strip()
-    bucket = bucket_query("infobox_spell", spell_name)
+    bucket = _bucket_query("infobox_spell", spell_name)
     if not bucket:
         return None
-    page_name = sanitize(bucket[0]["page_name"])
-    image_file = sanitize(bucket[0]["image"])
+    page_name = _sanitize(bucket[0]["page_name"])
+    image_file = _sanitize(bucket[0]["image"])
     return {"wikiUrl": f"{BASE}w/{page_name}", "imgUrl": f"{BASE}images/{image_file}"}
 
 
-def construction(object_name: str) -> Optional[Dict[str, str]]:
+def _construction(object_name: str) -> Dict[str, str] | None:
     """Resolve a Construction object to its wiki page and icon.
 
     Uses default_version=true; if not found, retries with ' (construction)' suffix.
@@ -189,17 +188,17 @@ def construction(object_name: str) -> Optional[Dict[str, str]]:
         {'wikiUrl': str, 'imgUrl': str} if found, else None.
     """
     n = object_name.strip()
-    bucket = bucket_query("infobox_construction", n)
+    bucket = _bucket_query("infobox_construction", n)
     if not bucket:
-        bucket = bucket_query("infobox_construction", f"{n} (construction)")
+        bucket = _bucket_query("infobox_construction", f"{n} (construction)")
     if not bucket:
         return None
-    page_name = sanitize(bucket[0]["page_name"])
-    icon_file = sanitize(bucket[0]["icon"][0])
+    page_name = _sanitize(bucket[0]["page_name"])
+    icon_file = _sanitize(bucket[0]["icon"][0])
     return {"wikiUrl": f"{BASE}w/{page_name}", "imgUrl": f"{BASE}images/{icon_file}"}
 
 
-def quest(quest_name: str) -> Optional[Dict[str, str]]:
+def _quest(quest_name: str) -> Dict[str, str] | None:
     """Resolve a quest to its wiki page and a fixed quest point icon.
 
     Args:
@@ -209,17 +208,17 @@ def quest(quest_name: str) -> Optional[Dict[str, str]]:
         {'wikiUrl': str, 'imgUrl': str} if found, else None.
     """
     q = quest_name.strip()
-    bucket = bucket_query("quest", q)
+    bucket = _bucket_query("quest", q)
     if not bucket:
         return None
-    page_name = sanitize(bucket[0]["page_name"])
+    page_name = _sanitize(bucket[0]["page_name"])
     return {
         "wikiUrl": f"{BASE}w/{page_name}",
         "imgUrl": f"{BASE}images/Quest_point_icon.png",
     }
 
 
-def skill(skill_name: str) -> Optional[Dict[str, str]]:
+def _skill(skill_name: str) -> Dict[str, str] | None:
     """Resolve a skill to its wiki page and icon.
 
     Normalizes 'Runecrafting' → 'Runecraft' and validates against known skills.
@@ -241,7 +240,7 @@ def skill(skill_name: str) -> Optional[Dict[str, str]]:
     }
 
 
-def generalized_search(search: str) -> Optional[Dict[str, str]]:
+def _generalized_search(search: str) -> Dict[str, str] | None:
     """Fallback resolver using the OSRS Wiki OpenSearch endpoint.
 
     Useful for entities not covered by bucket queries. Does not resolve an image,
@@ -261,7 +260,6 @@ def generalized_search(search: str) -> Optional[Dict[str, str]]:
         "redirects": "resolve",
     }
     # Keep the original side-effect for parity
-    print("generalized search occured")
     resp = s.get(API, params=params, timeout=TIMEOUT)
     data = resp.json()
     if not data or not data[3]:
@@ -272,7 +270,7 @@ def generalized_search(search: str) -> Optional[Dict[str, str]]:
     }
 
 
-def slayer_rewards(reward_name: str) -> Optional[Dict[str, str]]:
+def _slayer_rewards(reward_name: str) -> Dict[str, str] | None:
     """Resolve a Slayer reward to its wiki page and image using packaged CSV.
 
     Looks up `unlock_name` → icon filename mapping from `data/slayer_rewards.csv`.
@@ -300,7 +298,7 @@ def slayer_rewards(reward_name: str) -> Optional[Dict[str, str]]:
     }
 
 
-def prayer(prayer_name: str) -> Optional[Dict[str, str]]:
+def _prayer(prayer_name: str) -> Dict[str, str] | None:
     """Resolve a prayer to its wiki page and image using packaged CSV.
 
     Looks up `name` → icon filename mapping from `data/prayers.csv`.
@@ -325,7 +323,7 @@ def prayer(prayer_name: str) -> Optional[Dict[str, str]]:
     }
 
 
-def search_all(input: str) -> Optional[Dict[str, str]]:
+def search(name: str) -> Dict[str, str] | None:
     """Try all resolvers in order and return the first match.
 
     Order:
@@ -338,16 +336,35 @@ def search_all(input: str) -> Optional[Dict[str, str]]:
         {'wikiUrl': str, 'imgUrl': str} or None if all resolvers fail.
     """
     for fn in (
-        item,
-        spell,
-        construction,
-        skill,
-        quest,
-        prayer,
-        slayer_rewards,
-        generalized_search,
+        _item,
+        _spell,
+        _construction,
+        _skill,
+        _quest,
+        _prayer,
+        _slayer_rewards,
+        _generalized_search,
     ):
-        r = fn(input)
+        r = fn(name)
         if r:
             return r
     return None
+
+
+def search_many(
+    names: Iterable[str], *, skip_missing: bool = True
+) -> Dict[str, Dict[str, str]]:
+    """Batch resolve names.
+
+    Args:
+        names: strings to resolve
+        skip_missing: if True, omit misses; if False, include with value None
+    """
+    out: Dict[str, Dict[str, str]] = {}
+    for n in names:
+        res = search(n)
+        if res is not None:
+            out[n] = res
+        elif not skip_missing:
+            out[n] = None  # type: ignore[assignment]
+    return out
