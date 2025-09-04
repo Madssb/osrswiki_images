@@ -39,6 +39,7 @@ Internal Helpers (subject to change)
 
 from __future__ import annotations
 
+import time
 from importlib.resources import files
 from typing import Dict, Iterable, List, Optional
 
@@ -48,12 +49,19 @@ import requests
 
 BASE = "https://oldschool.runescape.wiki/"
 API = "https://oldschool.runescape.wiki/api.php"
+TIMEOUT = 8
+
+
+class RetryableHTTPError(requests.exceptions.HTTPError): ...
+
+
+class NonRetryableHTTPError(requests.exceptions.HTTPError): ...
+
 
 s = requests.Session()
 s.headers.update(
     {"user-agent": "osrswiki_images/v0.1 (https://github.com/Madssb/osrswiki_images)"}
 )
-TIMEOUT = 10
 
 SKILLS = [
     "Attack",
@@ -87,6 +95,37 @@ def _pkg_csv_path(name: str) -> str:
     return str(files("osrswiki_images").joinpath("data", name))
 
 
+def _raise_for_policy(resp: requests.Response) -> None:
+    sc = resp.status_code
+    if sc == 429 or 500 <= sc < 600:
+        ra = resp.headers.get("Retry-After")
+        if ra:
+            try:
+                time.sleep(int(ra))
+            except ValueError:
+                pass
+        raise RetryableHTTPError(f"{sc}", response=resp)
+    if sc >= 400:
+        raise NonRetryableHTTPError(f"{sc}", response=resp)
+
+
+@backoff.on_exception(
+    wait_gen=backoff.expo,
+    exception=(
+        requests.exceptions.Timeout,
+        requests.exceptions.ConnectionError,
+        RetryableHTTPError,
+    ),
+    jitter=backoff.full_jitter,
+    max_time=30,
+    giveup=lambda e: isinstance(e, NonRetryableHTTPError),
+)
+def _get_with_backoff(params: Dict[str, str]) -> requests.Response:
+    resp = s.get(API, params=params, timeout=TIMEOUT)
+    _raise_for_policy(resp)
+    return resp
+
+
 def _bucket_query(bucket_name: str, page_name: str) -> List[Dict[str, str]]:
     """Fetch raw records from the OSRS Wiki bucket API.
 
@@ -115,15 +154,16 @@ def _bucket_query(bucket_name: str, page_name: str) -> List[Dict[str, str]]:
         "quest": f"bucket('quest').select('page_name').where('page_name','{page_name}').run()",
     }
     params = {"action": "bucket", "format": "json", "query": q[bucket_name]}
+    resp = _get_with_backoff(params)
 
-    @backoff.on_predicate(backoff.expo, lambda r: r.status_code == 429)
-    def make_request(request):
-        return request.get(API, params=params, timeout=TIMEOUT)
-
-    resp = make_request(s)
     if not resp.ok:
         raise ConnectionError(f"request failed: {resp.status_code}")
-    return resp.json()["bucket"]
+
+    data = resp.json()
+    if "bucket" not in data or not isinstance(data["bucket"], list):
+        raise ConnectionError("malformed response: missing 'bucket'")
+
+    return data["bucket"]
 
 
 def _sanitize(text: str) -> str:
@@ -266,7 +306,7 @@ def _generalized_search(search: str) -> Dict[str, str] | None:
         "redirects": "resolve",
     }
     # Keep the original side-effect for parity
-    resp = s.get(API, params=params, timeout=TIMEOUT)
+    resp = _get_with_backoff(params)
     data = resp.json()
     if not data or not data[3]:
         return None
