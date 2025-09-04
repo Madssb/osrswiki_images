@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "osrswiki-images"
-version = "0.1.1"
+version = "0.1.2"
 description = "Resolve OSRS names to wiki and image URLs (items, spells, construction, quests, skills, plus curated prayers/slayer rewards)."
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.11"
@@ -24,6 +24,7 @@ classifiers = [
 dependencies = [
   "requests>=2.31",
   "pandas>=2.0",
+  "backoff"
 ]
 
 [project.urls]
