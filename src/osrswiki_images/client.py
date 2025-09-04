@@ -42,6 +42,7 @@ from __future__ import annotations
 from importlib.resources import files
 from typing import Dict, Iterable, List, Optional
 
+import backoff
 import pandas as pd
 import requests
 
@@ -114,7 +115,12 @@ def _bucket_query(bucket_name: str, page_name: str) -> List[Dict[str, str]]:
         "quest": f"bucket('quest').select('page_name').where('page_name','{page_name}').run()",
     }
     params = {"action": "bucket", "format": "json", "query": q[bucket_name]}
-    resp = s.get(API, params=params, timeout=TIMEOUT)
+
+    @backoff.on_predicate(backoff.expo, lambda r: r.status_code == 429)
+    def make_request(request):
+        return request.get(API, params=params, timeout=TIMEOUT)
+
+    resp = make_request(s)
     if not resp.ok:
         raise ConnectionError(f"request failed: {resp.status_code}")
     return resp.json()["bucket"]
