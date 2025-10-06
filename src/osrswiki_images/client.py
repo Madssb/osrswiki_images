@@ -201,7 +201,11 @@ def _item(item_name: str) -> Dict[str, str] | None:
         return None
     page_name = _sanitize(bucket[0]["page_name"])
     image_file = _sanitize(bucket[0]["image"][0])
-    return {"wikiUrl": f"{BASE}w/{page_name}", "imgUrl": f"{BASE}images/{image_file}"}
+    return {
+        "wikiUrl": f"{BASE}w/{page_name}",
+        "imgUrl": f"{BASE}images/{image_file}",
+        "type": "item",
+    }
 
 
 def _spell(spell_name: str) -> Dict[str, str] | None:
@@ -219,7 +223,11 @@ def _spell(spell_name: str) -> Dict[str, str] | None:
         return None
     page_name = _sanitize(bucket[0]["page_name"])
     image_file = _sanitize(bucket[0]["image"])
-    return {"wikiUrl": f"{BASE}w/{page_name}", "imgUrl": f"{BASE}images/{image_file}"}
+    return {
+        "wikiUrl": f"{BASE}w/{page_name}",
+        "imgUrl": f"{BASE}images/{image_file}",
+        "type": "spell",
+    }
 
 
 def _construction(object_name: str) -> Dict[str, str] | None:
@@ -241,7 +249,11 @@ def _construction(object_name: str) -> Dict[str, str] | None:
         return None
     page_name = _sanitize(bucket[0]["page_name"])
     icon_file = _sanitize(bucket[0]["icon"][0])
-    return {"wikiUrl": f"{BASE}w/{page_name}", "imgUrl": f"{BASE}images/{icon_file}"}
+    return {
+        "wikiUrl": f"{BASE}w/{page_name}",
+        "imgUrl": f"{BASE}images/{icon_file}",
+        "type": "construction",
+    }
 
 
 def _quest(quest_name: str) -> Dict[str, str] | None:
@@ -261,6 +273,7 @@ def _quest(quest_name: str) -> Dict[str, str] | None:
     return {
         "wikiUrl": f"{BASE}w/{page_name}",
         "imgUrl": f"{BASE}images/Quest_point_icon.png",
+        "type": "quest",
     }
 
 
@@ -283,6 +296,7 @@ def _skill(skill_name: str) -> Dict[str, str] | None:
     return {
         "wikiUrl": f"{BASE}w/{name}",
         "imgUrl": f"{BASE}images/{name}_icon.png",
+        "type": "skill",
     }
 
 
@@ -310,10 +324,7 @@ def _generalized_search(search: str) -> Dict[str, str] | None:
     data = resp.json()
     if not data or not data[3]:
         return None
-    return {
-        "wikiUrl": data[3][0],
-        "imgUrl": f"{BASE}images/Null.png",
-    }
+    return {"wikiUrl": data[3][0], "imgUrl": f"{BASE}images/Null.png", "type": "fail"}
 
 
 def _slayer_rewards(reward_name: str) -> Dict[str, str] | None:
@@ -341,6 +352,7 @@ def _slayer_rewards(reward_name: str) -> Dict[str, str] | None:
     return {
         "wikiUrl": f"{BASE}w/Slayer_Rewards",
         "imgUrl": f"{BASE}images/{image_file}",
+        "type": "slayer",
     }
 
 
@@ -366,6 +378,7 @@ def _prayer(prayer_name: str) -> Dict[str, str] | None:
     return {
         "wikiUrl": f"{BASE}w/{page_name}",
         "imgUrl": f"{BASE}images/{image_file}",
+        "type": "prayer",
     }
 
 
